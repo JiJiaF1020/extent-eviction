@@ -163,14 +163,16 @@ def _select_victim_extents(
     victim_slots 按 extent 分数从低到高排列，extent 内 slot ID 升序。
     """
 
-    extent_total = (active + granularity - 1) // granularity
+    # 只有完整 extent 可被淘汰；尾部不完整 extent（active % g != 0）永不当选，
+    # 避免在 victim 列表里产生重复 slot。
+    extent_total = active // granularity
     extent_needed = victim_count // granularity
 
     scores = np.empty(extent_total, dtype=np.float64)
     la_maxes = np.empty(extent_total, dtype=np.int64)
     for extent in range(extent_total):
         begin = extent * granularity
-        end = min(begin + granularity, active)
+        end = begin + granularity
         score, la_max = _extent_score_r1(slot_last_acc, row, begin, end)
         if current_round - int(ext_born[row, extent]) < grace_rounds:
             score = _PROTECTED_SCORE
@@ -188,12 +190,10 @@ def _select_victim_extents(
 
     out = 0
     for rank in range(extent_needed):
-        extent = order[rank] if rank < extent_total else extent_total - 1
+        extent = order[rank]
         begin = extent * granularity
         for offset in range(granularity):
             slot = begin + offset
-            if slot >= active:
-                slot = active - 1
             victim_slots[row, out] = slot
             out += 1
             word = slot >> 5
